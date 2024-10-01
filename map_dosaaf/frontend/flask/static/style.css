@@ -58,3 +58,18 @@ body {
     font-size: 12px;
     font-weight: bold;
 }
+
+.data-row {
+    border-bottom: 1px solid #ddd; /* Разделительная линия между парами */
+    padding: 8px 0; /* Отступы сверху и снизу */
+    font-size: 15px;
+}
+
+.data-key {
+    font-weight: bold; /* Жирный шрифт для ключа */
+    margin-right: 10px; /* Отступ справа для ключа */
+}
+
+.data-value {
+    color: #333; /* Цвет текста для значения */
+}
