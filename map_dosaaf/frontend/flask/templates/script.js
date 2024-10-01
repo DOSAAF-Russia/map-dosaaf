@@ -1,10 +1,13 @@
+var INITIAL_ZOOM = 3;
+var INITIAL_COORDS = [63.31122971681907, 92.47689091219665];
+
 var map = L.map('map', {
     // preferCanvas: true,
     // renderer: L.canvas()
-}).setView({{ center }}, {{ zoom }});
+}).setView(INITIAL_COORDS, INITIAL_ZOOM);
+
 window._data = {};
-
-
+var DISABLE_TILE_COLORS_RENDERING = false;
 
 class FederalDistrictLoader {
     constructor(map) {
@@ -42,88 +45,64 @@ class FederalDistrictLoader {
             throw new Error("API Response is empty. Try to load data first");
         }
 
-        let unionPolygons = [];
         let levels = { "federal_district": [], "regions": [] };
 
         for (let d of this._raw_result) {
-            let names = new Set(levels["federal_district"].map(item => item.name));
+            let names = new Set(levels["federal_district"].map(item => item.properties.name));
             if (names.has(d.name)) {
                 continue;
             }
+
+            let polygon = turf.feature(d.geojson);
+            if (!polygon.properties) {
+                polygon.properties = {};
+            }
+            polygon.properties.name = d.name;
+
             if (d.name.toLowerCase().includes("федеральный округ")) {
-                let polygon = d.geojson;
-                if (!polygon.properties) {
-                    polygon.properties = {};
-                }
-                polygon.properties.name = d.name;
+                levels["federal_district"].push(polygon);
 
-                let obj = {
-                    name: d.name,
-                    polygon: polygon,
-                }
-
-                levels["federal_district"].push(obj);
-                unionPolygons.push(polygon);
             } else {
-                let names = new Set(levels["regions"].map(item => item.name));
+                let names = new Set(levels["regions"].map(item => item.properties.name));
                 if (names.has(d.name)) {
                     continue;
                 }
-                levels["regions"].push(d);
+
+                levels["regions"].push(polygon);
             }
         }
-
+        
+        levels["federal_district"] = levels["federal_district"].sort((a, b) => {
+            return turf.area(a) - turf.area(b);
+        });
         let processedRegions = [];
-        for (let fd_obj of levels["federal_district"]) {
-            for (let d of levels["regions"]) {
-                let names = new Set(processedRegions.map(item => item.name));
-                if (names.has(d.name)) {
+        for (let d of levels["regions"]) {
+            for (let fd_obj of levels["federal_district"]) {
+                let names = new Set(processedRegions.map(item => item.properties.name));
+                if (names.has(d.properties.name)) {
                     continue;
                 }
 
-                let fd_geojson = L.geoJSON(fd_obj.polygon);
-                let reg_geojson = L.geoJSON(d.geojson);
+                let fd_geojson = L.geoJSON(fd_obj);
+                let reg_geojson = L.geoJSON(d);
 
-                let obj = {
-                    name: d.name,
-                    polygon: d.geojson,
-                }
                 if (fd_geojson.getBounds().contains(reg_geojson.getBounds())) {
-                    obj.federal_district = fd_obj.name;
+                    d.properties.federal_district = fd_obj.properties.name;
+                    processedRegions.push(d);
                 }
-                else { continue; }
-
-                if (!obj.polygon.properties) {
-                    obj.polygon.properties = {};
-                }
-                obj.polygon.properties = { name: obj.name, federal_district: obj.federal_district };
-                processedRegions.push(obj);
             }
         }
 
         levels["regions"] = processedRegions;
-        if (!window._data || Object.keys(window._data).length === 0) {
-            window._data = levels;
-        }
-
-        for (let fd of levels["federal_district"]) {
-            let p = fd.polygon;
-            L.geoJSON(p).addTo(map).on("click", function(e) {
-                let props = e.layer.feature.geometry.properties;
-                console.log(`fd: ${props.name}`);
-            });
-        }
-
-        for (let region of processedRegions) {
-            let p = region.polygon;
-            L.geoJSON(p).addTo(map).on("click", function(e) {
-                let props = e.layer.feature.geometry.properties;
-                console.log(`region: ${props.name} fd: ${props.federal_district}`);
-            });
-        }
         
-
-        return featureCollection;
+        let obj = {
+            "regions": turf.featureCollection(levels["regions"]),
+            "federal_districts": turf.featureCollection(levels["federal_district"])
+        }
+        if (!window._data || Object.keys(window._data).length === 0) {
+            window._data = obj;
+        }
+        return obj;
     }
 
 
@@ -137,6 +116,190 @@ class FederalDistrictLoader {
         }
         return featureCollection;
     }
+}
+
+var isPinned = false;
+
+
+class infoPanelWidget {
+    constructor() {
+        this._infoControl = L.control.custom({ position: 'topright' });
+        this._infoControl.onAdd = function (map) {
+            this._div = L.DomUtil.create('div', 'info');
+            this._div.style.backgroundColor = 'white';
+            this._div.style.padding = '10px';
+            this._div.style.borderRadius = '5px';
+            this._div.style.width = '300px';
+            this._div.style.opacity = "30%"
+            this._div.style.right = '-70%';
+            this._div.style.transition = 'right 0.3s'; 
+
+            this.isPinned = false;
+            this._div.addEventListener('mouseenter', () => {
+                if (!isPinned) { // Если не закреплено, выезжает
+                    this._div.style.right = '0'; // Выезжает на 100%
+                    this._div.style.opacity = "100%"
+                }
+            });
+
+            this._div.addEventListener('mouseleave', () => {
+                if (!isPinned) { // Если не закреплено, скрывается
+                    this._div.style.right = '-70%'; // Скрывается на 70%
+                    this._div.style.opacity = "30%"
+                }
+            });
+    
+            this.update();
+            return this._div;
+        };
+    }
+
+    getEcTypesCount() {
+        let ecTypesCount = {};
+        for (let ec of window._data.markersData) {
+            let coords = ec.coords ? ec.coords[0].split(",") : [];
+            if (coords.length === 2) {
+                if (!map.getBounds().contains(L.latLng(coords))) {
+                    continue;
+                }
+            }
+            let type;
+
+            if (ec.type_ec.toLowerCase().includes('зональный')) {
+                type = "Зональный центр";
+            } else if (ec.type_ec.toLowerCase().includes("региональный")) {
+                type = "Региональный центр"
+            } else {
+                throw new Error(ec.type_ec)
+            }
+
+            if (ecTypesCount[type]) {
+                ecTypesCount[type] += 1;
+            } else {
+                ecTypesCount[type] = 1;
+            }
+        }
+        return ecTypesCount;
+    }
+
+    getInfoPanel() {
+        let infoControl = this._infoControl;
+        var getEcTypesCount = this.getEcTypesCount.bind(this);
+        infoControl.update = function (props) {
+            let ecTypesCount = getEcTypesCount();
+            let btn_text = 'Закрепить';
+
+            if (isPinned) {
+                btn_text = "Открепить";
+            }
+
+            this._div.innerHTML = `
+            <button class="pin-button">${btn_text}</button>
+            <h3>Главная информация</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr>
+                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Тип единого центра</th>
+                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Количество ЕЦ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${Object.entries(ecTypesCount).map(([type, count]) => `
+                        <tr>
+                            <td style="border: 1px solid #ddd; padding: 8px;">${type}</td>
+                            <td style="border: 1px solid #ddd; padding: 8px;">${count}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            `
+            
+            let btn = this._div.getElementsByClassName("pin-button")[0];
+            btn.onclick = function(e) {
+                isPinned = !isPinned
+                let btn_text = 'Закрепить';
+
+                if (isPinned) {
+                    btn_text = "Открепить";
+                }
+
+                btn.textContent = btn_text
+            }
+        };
+
+        return infoControl;
+    }
+}
+
+function getInfoPanel() {
+    let infoControl = L.control.custom({ position: 'topright' });
+
+    infoControl.onAdd = function (map) {
+        this._div = L.DomUtil.create('div', 'info');
+        this._div.style.backgroundColor = 'white';
+        this._div.style.padding = '10px';
+        this._div.style.borderRadius = '5px';
+        this._div.style.width = '300px';
+        this._div.style.opacity = "30%"
+        this._div.style.right = '-70%';
+        this._div.style.transition = 'right 0.3s'; 
+
+        this._div.addEventListener('mouseenter', () => {
+            this._div.style.right = '0'; // Выезжает на 100%
+            this._div.style.opacity = "100%"
+        });
+
+        this._div.addEventListener('mouseleave', () => {
+            this._div.style.right = '-70%'; // Скрывается на 70%
+            this._div.style.opacity = "30%"
+        });
+
+        this.update();
+        return this._div;
+    };
+
+    let ecTypesCount = {};
+
+    for (let ec of window._data.markersData) {
+        let type;
+
+        if (ec.type_ec.toLowerCase().includes('зональный')) {
+            type = "Зональный центр";
+        } else if (ec.type_ec.toLowerCase().includes("региональный")) {
+            type = "Региональный центр"
+        } else {
+            throw new Error(ec.type_ec)
+        }
+
+        if (ecTypesCount[type]) {
+            ecTypesCount[type] += 1;
+        } else {
+            ecTypesCount[type] = 1;
+        }
+    }
+
+    infoControl.update = function (props) {
+        this._div.innerHTML = `<h3>Главная информация</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Тип единого центра</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Количество ЕЦ</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${Object.entries(ecTypesCount).map(([type, count]) => `
+                    <tr>
+                        <td style="border: 1px solid #ddd; padding: 8px;">${type}</td>
+                        <td style="border: 1px solid #ddd; padding: 8px;">${count}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+        `
+    };
+
+    return infoControl;
 }
 
 
@@ -195,14 +358,19 @@ function getDataFromEC(ec) {
 
 
 async function getOrgs(eins = null) {
-    let response = await fetch(`/api/organizations?eins=${eins}`);
+    let url = `/api/organizations`;
+    if (eins) {
+        url = `/api/organizations?eins=${eins}`
+    }
+
+    let response = await fetch(url);
     let organizations = await response.json();
     return organizations;
 }
 
 
-async function loadOrganizations(organisations) {
-
+function loadOrganizations(organisations) {
+    let orgs = [];
     for (let organization of organisations) {
         // load coordinates
         let coords = [0, 0];
@@ -212,29 +380,43 @@ async function loadOrganizations(organisations) {
 
         // load display data
         let dataObject = getDataFromOrg(organization);
-        let dataString = objectToString(dataObject);
+        // let dataString = objectToString(dataObject);
 
-        let marker = L.marker(coords);
-        marker.bindPopup(dataString).openPopup();
-        marker.bindTooltip(dataObject.name);
-        marker.addTo(window._markers);
+        // let marker = L.marker(coords);
+        // marker.bindPopup(dataString).openPopup();
+        // marker.bindTooltip(dataObject.name);
+        // marker.addTo(window._markers);
+        orgs.push(dataObject)
     }
     //markers.addTo(map);
+    if (!window._data.orgs || window._data.orgs.length === 0) {
+        window._data.orgs = orgs
+    }
 }
 
+var sidebar = L.control.sidebar('sidebar', {
+    position: 'right'
+});
+map.addControl(sidebar);    
+sidebar.on("hidden", function() {
+    sidebar.setContent("");
+})
 
 async function loadEC() {
     let response = await fetch('/api/ec');
     let ecs = await response.json();
+    
+
+    if (!window._data.markersData) {
+        window._data.markersData = [];
+    }
 
     for (let ec of ecs) {
-        // load coordinates
         let coords = [0, 0];
         if (ec.coords && ec.coords[0]) {
             coords = ec.coords[0].split(',').map(num => parseFloat(num.trim()));
         }
 
-        // load display data
         let dataObject = getDataFromEC(ec);
         let dataString = objectToString(dataObject);
 
@@ -261,50 +443,247 @@ async function loadEC() {
             }),
         })
 
-        let popup = ecPopup(dataObject.name, dataString, ec.organisations);
-
-        marker.bindPopup(popup);
         marker.bindTooltip(dataObject.name);
+        marker.on("click", function(e) {
+            if (sidebar.isVisible()) {
+                return;
+            }
+
+            let data = {
+                "Тип": dataObject.type_ec,
+                "Адрес": dataObject.address,
+                "Регион": dataObject.region,
+                "Федеральный округ": dataObject.federal_district,
+                "Координаты": dataObject.coords,
+            }
+
+            sidebar.setContent(
+                `
+                <div style="display: flex; flex-direction: column; height: 100%;">
+                    <h3>${dataObject.name}</h3>
+                    <div style="width: 100%; border-collapse: collapse; flex-grow: 1;">
+                        ${Object.entries(data).map(([key, value]) => `
+                            <div class="data-row">
+                                <span class="data-key">${key}:</span>
+                                <span class="data-value">${value}</span>
+                            </div>
+                        `).join('')}
+                        
+                        <a href="https://yandex.ru/maps?mode=search&text=${dataObject.coords}" target="_blank" style="text-decoration: none;">
+                            <button style="padding: 10px 20px;">Открыть на Яндекс.Картах</button>
+                        </a>
+                        <a href="https://2gis.ru/search/${dataObject.coords}" target="_blank" style="text-decoration: none;">
+                            <button style="padding: 10px 20px;">Открыть в 2GIS</button>
+                        </a>
+                    </div>
+                    
+                    <div style="padding: 10px; text-align: center;">
+                        <button id="organisations_viewer" style="padding: 10px 20px;">Привязанные организации (${dataObject.related_organisations.length})</button>
+                    </div>
+                </div>
+                `
+            )
+            sidebar.show()
+            document.getElementById("organisations_viewer").onclick = function(e) {
+                let organisations = window._data.orgs.filter(org => dataObject.related_organisations.includes(org.ein));
+                sidebar.hide()
+
+                DISABLE_TILE_COLORS_RENDERING = true;
+                hideAllMarkers({remove: true})
+                clearHighlight()
+
+                let markers = [];
+                for (let org of organisations) {
+                    let marker = L.marker(org.coords[0].split(",")).addTo(window._markers);
+                    marker.on("click", function(e) {
+                        if (sidebar.isVisible()) {
+                            sidebar.hide()
+                        }
+
+                        let data = {
+                            "Тип организации": org.type_org,
+                            "ИНН организации": org.ein,
+                            "КПП организации": org.kpp,
+                            "Кол-во персонала": org.personals,
+                            "Регион": org.region,
+                            "Федеральный округ": org.federal_district,
+                            "Адрес": org.address,
+                            "Координаты": org.coords,
+                        }
+                        
+                        let contactsData = {
+                            "Телефон": org.phones || "Нету данных",
+                            "Почта": org.emails || "Нету данных",
+                            "Сайт": org.websites[0] || "Нету данных",
+                            "Профиль на ListOrg": org.listorg ? 
+                                `<a href="${org.listorg}" target="_blank" style="text-decoration: none;">
+                                    <button style="padding: 10px 20px;">Открыть профиль</button>
+                                </a>` : 
+                                "Нету данных",
+                        }
+            
+                        sidebar.setContent(
+                            `
+                            <div style="display: flex; flex-direction: column; height: 100%;">
+                                <h3>${org.name}</h3>
+                                <div style="width: 100%; border-collapse: collapse; flex-grow: 1;">
+                                    ${Object.entries(data).map(([key, value]) => `
+                                        <div class="data-row">
+                                            <span class="data-key">${key}:</span>
+                                            <span class="data-value">${value}</span>
+                                        </div>
+                                    `).join('')}
+                                    
+                                    <a href="https://yandex.ru/maps?mode=search&text=${dataObject.coords}" target="_blank" style="text-decoration: none;">
+                                        <button style="padding: 10px 20px;">Открыть на Яндекс.Картах</button>
+                                    </a>
+                                    <a href="https://2gis.ru/search/${dataObject.coords}" target="_blank" style="text-decoration: none;">
+                                        <button style="padding: 10px 20px;">Открыть в 2GIS</button>
+                                    </a>
+                                </div>
+
+                                <h3>Контактная информация</h3>
+                                <div style="width: 100%; border-collapse: collapse; flex-grow: 1;">
+                                    ${Object.entries(contactsData).map(([key, value]) => `
+                                        <div class="data-row">
+                                            <span class="data-key">${key}:</span>
+                                            <span class="data-value">${value}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            `
+                        )
+                        sidebar.show();
+                    })
+                    markers.push(marker);
+                }
+
+                let bounds = L.latLngBounds(markers.map(marker => marker.getLatLng()));
+                map.fitBounds(bounds);
+            }
+        })
+
         marker.addTo(window._markers);
+        window._data.markersData.push(dataObject);
     }
 }
 
 
+function closeFederalDistricts() {
+    map.eachLayer(function(layer) {
+        if (!layer.feature || !layer.feature.properties?.name.toLowerCase().includes("федеральный округ")) {
+            return;
+        }
+        map.removeLayer(layer)
+        //layer.setStyle({"opacity": 0, "fillOpacity": 0});
+        //layer.feature.properties.closed = true;
+    })
+}
+
+
+function openRegions(federal_district_name) {
+    let regions = [];
+    for (let regionFeature of window._data["regions"].features) {
+        if (regionFeature.properties.federal_district !== federal_district_name) {
+            continue;
+        }
+        regions.push(regionFeature)
+    }
+    
+    L.geoJSON(turf.featureCollection(regions), {
+        style: function(e) {
+            return {
+                "fillColor": "transparent",
+                "weight": 1.5,
+                "color": "black"
+            }
+        }
+    })
+    .on("click", function(e) {
+        map.fitBounds(e.layer.getBounds());
+        console.log(e.layer.feature.properties)
+    })
+    .on('mouseover', function(e) {
+        if (DISABLE_TILE_COLORS_RENDERING) {
+            return
+        }
+        var properties = e.layer.feature.properties;
+        if (properties.closed === true) {
+            return;
+        }
+        L.popup()
+        .setContent(properties.name)
+        .setLatLng(e.latlng)
+        .openOn(map);
+        clearHighlight();
+        highlight = e.layer;
+        var style = {
+            fillColor: '#ec0f0f',
+            fillOpacity: 0.2,
+            stroke: true,
+            fill: true,
+            color: 'red',
+            opacity: 1,
+            weight: 2,
+        };
+        e.layer.setStyle(style);
+    })
+    .addTo(map);
+}
+
+
 async function loadFD() {
-    let featureCollection = await fd_loader.getFeatureCollection();
-    // L.vectorGrid.slicer(featureCollection, {
-    //     rendererFactory: L.svg.tile,
-    //     vectorTileLayerStyles: {
-    //         sliced: function(properties, zoom) {
-    //             return {
-    //                 fillColor: "transparent",
-    //                 fillOpacity: 0.5,
-    //                 stroke: true,
-    //                 fill: true,
-    //                 color: 'black',
-    //                 weight: 2,
-    //             }
-    //         }
-    //     },
-    //     interactive: true,
-    // }).addTo(map).on("click", function(e) {
-    //     console.log(e.layer.properties.name);
-    // });
+    let featureCollections = await fd_loader.getFeatureCollection();
+    let fds = featureCollections["federal_districts"];
 
-    // L.geoJSON(featureCollection, {
-    //     style: function (feature) {
-    //         return {
-    //             color: 'black',
-    //             weight: 2,
-    //             fillOpacity: 0
-    //         };
-    //     }
-    // }).addTo(map);
+    L.geoJSON(fds, {
+        style: function(f) {
+            return {
+                fillColor: "transparent",
+                fillOpacity: 0.5,
+                fill: true,
+                color: 'black',
+                weight: 1.5,
+            }
+        }
+    })
+    .on('mouseover', function(e) {
+        if (DISABLE_TILE_COLORS_RENDERING) {
+            return
+        }
+        var properties = e.layer.feature.properties;
+        if (properties.closed === true) {
+            return;
+        }
+        L.popup()
+        .setContent(properties.name)
+        .setLatLng(e.latlng)
+        .openOn(map);
+        clearHighlight();
+        highlight = e.layer;
+        var style = {
+            fillColor: '#ec0f0f',
+            fillOpacity: 0.2,
+            stroke: true,
+            fill: true,
+            color: 'red',
+            opacity: 1,
+            weight: 2,
+        };
+        e.layer.setStyle(style);
+    })
+    .on("click", function(e) {
+        console.log(e.layer.feature.properties)
+        map.fitBounds(e.layer.getBounds());
+        openRegions(e.layer.feature.properties.name)
+        closeFederalDistricts()
+    })
+    .addTo(map);
 
-    // L.glify.shapes({
-    //     map: map,
-    //     data: simplified,
-    // });
+    map.on("click", function(e) {
+        clearHighlight()
+    })
 }
 
 
@@ -337,6 +716,8 @@ async function loadPolygons() {
 
 
 async function loadMarkers() {
+    let orgs = await getOrgs();
+    loadOrganizations(orgs)
     await loadEC();
 }
 
@@ -375,10 +756,15 @@ async function loadRelatedOrgsPopup(releatedOrgsEins) {
 }
 
 
-function hideAllMarkers(curr = null) {
+function hideAllMarkers(curr = null, remove = false) {
+    window._markers.clearLayers()
     map.eachLayer(function (layer) {
         if (layer instanceof L.Marker && layer !== curr) {
-            layer.setOpacity(0);
+            if (remove) {
+                map.removeLayer(layer)
+            } else {
+                layer.setOpacity(0);
+            }
         }
     });
 }
@@ -407,12 +793,108 @@ async function loadTileTogler() {
 }
 
 
+var highlight;
+var clearHighlight = function() {
+    if (highlight) {
+        highlight.setStyle({
+            fillColor: "transparent",
+            fillOpacity: 0.5,
+            fill: true,
+            color: 'black',
+            weight: 1.5,
+        });
+    }
+    highlight = null;
+};
+
+
+async function resetMapStyle() {
+    map.eachLayer(function(layer) {
+        if (!layer.feature) {
+            return;
+        }
+        map.removeLayer(layer);
+    })
+
+    if (sidebar.isVisible()) {
+        sidebar.hide()
+    }
+    DISABLE_TILE_COLORS_RENDERING = false;
+    let fds = _data["federal_districts"];
+
+    L.geoJSON(fds, {
+        style: function(f) {
+            return {
+                fillColor: "transparent",
+                fillOpacity: 0.5,
+                fill: true,
+                color: 'black',
+                weight: 1.5,
+            }
+        }
+    })
+    .on('mouseover', function(e) {
+        if (DISABLE_TILE_COLORS_RENDERING) {
+            return
+        }
+        var properties = e.layer.feature.properties;
+        if (properties.closed === true) {
+            return;
+        }
+        L.popup()
+        .setContent(properties.name)
+        .setLatLng(e.latlng)
+        .openOn(map);
+        clearHighlight();
+        highlight = e.layer;
+        var style = {
+            fillColor: '#ec0f0f',
+            fillOpacity: 0.5,
+            stroke: true,
+            fill: true,
+            color: 'red',
+            opacity: 1,
+            weight: 2,
+        };
+        e.layer.setStyle(style);
+    })
+    .on("click", function(e) {
+        console.log(e.layer.feature.properties)
+        map.fitBounds(e.layer.getBounds());
+        openRegions(e.layer.feature.properties.name)
+        closeFederalDistricts()
+    })
+    .addTo(map);
+
+    map.setView(INITIAL_COORDS, INITIAL_ZOOM);
+    await loadMarkers();
+}
+
+
+function setupOtherControls() {
+    L.easyButton('<i class="fa-solid fa-rotate-left"></i>', async function(){
+        await resetMapStyle()
+    }).addTo(map);
+
+    // let myControl = getInfoPanel();
+    let infoPanel = new infoPanelWidget();
+    let myControl = infoPanel.getInfoPanel();
+    myControl.addTo(map)
+
+    map.on('move', function(e) {
+        myControl.update()
+    })
+}
+
+
 async function main() {
     await loadTileTogler();
-    // window._markers = L.markerClusterGroup();
-    // window._markers.addTo(map);
-    //await loadMarkers();
+    window._markers = L.markerClusterGroup();
+    window._markers.addTo(map);
+
     await loadPolygons();
+    await loadMarkers();
+    setupOtherControls();
 }
 
 main();

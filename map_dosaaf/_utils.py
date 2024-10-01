@@ -793,7 +793,8 @@ class GeoCoder:
         async with coder:
             res = await coder.geocode(address, geometry="geojson", timeout=10)
 
-        return res.raw["geojson"]
+        geojson = res.raw["geojson"]
+        return geojson
 
     async def _query(self, address: str, proxy: str = None):
         headers = {
@@ -1011,15 +1012,18 @@ async def gather_polygons_dosaaf():
     data_geocoded = []
     tasks = []
 
-    async def geocode(query: str):
+    async def geocode(query: str, fd: str = None):
         nonlocal data_geocoded
 
-        proxy = f"http://90UmMBJx9y9s:RNW78Fm5@185.162.130.85:{random.randint(10000, 10999)}"
+        # proxy = f"http://90UmMBJx9y9s:RNW78Fm5@185.162.130.85:{random.randint(10000, 10999)}"
+        proxy = None
+        
         inst = GeoCoder()
-        address = await inst.geocoder_api_get_formatted_address(query, proxy)
+        # address = await inst.geocoder_api_get_formatted_address(query, proxy)
+        address = query
         geojson = await inst.get_geojson(query, proxy)
         await inst._client.close()
-        data_geocoded.append({"name": query, "address": address, "geojson": geojson})
+        data_geocoded.append({"name": query, "address": address, "geojson": geojson, "federal_district": fd})
 
     while True:
         file_data = orjson.loads(open("regions-geocoded.json").read())
@@ -1036,8 +1040,11 @@ async def gather_polygons_dosaaf():
                 region_name = region["name"]
 
                 if region_name not in existing_names:
+                    if region_name == "Республика Северная Осетия":
+                        region_name = "Северная Осетия"
+                    
                     print(f"region: {region_name}")
-                    task = geocode(region_name)
+                    task = geocode(region_name, fd_name)
                     tasks.append(task)
 
             if len(tasks) > 10:
@@ -1046,9 +1053,9 @@ async def gather_polygons_dosaaf():
 
                 exists = orjson.loads(open("regions-geocoded.json").read())
                 exists.extend(data_geocoded)
-                open("regions-geocoded.json", "w").write(
-                    orjson.dumps(exists).decode("utf-8")
-                )
+                tmp = []
+                [tmp.append(d) for d in exists if d["name"] not in [o["name"] for o in tmp]]
+                open("regions-geocoded.json", "w").write(orjson.dumps(tmp).decode("utf-8"))
 
                 data_geocoded.clear()
 
@@ -1063,6 +1070,8 @@ async def gather_polygons_dosaaf():
             tmp = []
             [tmp.append(d) for d in exists if d["name"] not in [o["name"] for o in tmp]]
             open("regions-geocoded.json", "w").write(orjson.dumps(tmp).decode("utf-8"))
+            data_geocoded.clear()
+            tasks.clear()
 
         await asyncio.sleep(2)
 

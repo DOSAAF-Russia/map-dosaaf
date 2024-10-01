@@ -131,7 +131,7 @@ def script_js():
     center = [63.31122971681907, 92.47689091219665]
     zoom = 3
     response = make_response(
-        render_template("script.js", center=center, zoom=zoom)
+        render_template("script.js")
     )
     response.mimetype = "application/javascript"
     return response

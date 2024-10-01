@@ -23,17 +23,26 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='leaflet-beautify-marker-icon.css')}}" />
     <script src="{{ url_for('static', filename='leaflet-beautify-marker-icon.js')}}"></script>
-
+    <script src="{{ url_for('static', filename='Leaflet.Control.Custom.js')}}"></script>
+    
     <script src="https://unpkg.com/leaflet.vectorgrid@latest/dist/Leaflet.VectorGrid.bundled.js"></script>
-
-    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.1.0/turf.min.js"></script>
-
+    
+    <!-- <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.1.0/turf.min.js"></script> -->
+    <script src="{{ url_for('static', filename='turf.min.js')}}" charset="utf-8"></script>
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-easybutton@2/src/easy-button.css">
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-easybutton@2/src/easy-button.js"></script>
+    
     <script src="https://unpkg.com/protomaps-leaflet@4.0.1/dist/protomaps-leaflet.js"></script>
     <script src="{{ url_for('static', filename='node_modules/leaflet.glify/dist/glify-browser.js') }}"></script>
+    
+    <script src="{{ url_for('static', filename='L.Control.Sidebar.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='L.Control.Sidebar.css') }}" />
 </head>
 
 <body>
     <div id="map"></div>
+    <div id="sidebar"></div>
     
     <script defer src="{{ url_for('script_js') }}"></script>
 </body>
