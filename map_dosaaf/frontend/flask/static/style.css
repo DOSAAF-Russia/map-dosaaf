@@ -1,0 +1,60 @@
+html,
+body {
+    height: 100%;
+    margin: 0;
+}
+
+#map {
+    height: 100%;
+    width: 100%;
+}
+
+.ec-popup .leaflet-popup-content-wrapper {
+    background: white;
+    color: #333;
+    font-size: 16px;
+    line-height: 20px;
+    border-radius: 5px;
+    padding: 10px;
+    text-align: right;
+    padding: 10px;
+    padding-left: 30px;
+    padding-right: 30px;
+}
+
+.ec-popup .leaflet-popup-content {
+    margin: 0;
+}
+
+.ec-popup .leaflet-popup-tip-container {
+    display: none;
+}
+
+.popup-title {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.popup-content {
+    text-align: left;
+}
+
+.popup-close-btn {
+    display: block;
+    margin: 15px auto 0;
+    padding: 5px 10px;
+    border: none;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+    border-radius: 3px;
+    text-align: center;
+}
+
+.ec-marker {
+    padding: 2px;
+    font-size: 12px;
+    font-weight: bold;
+}
