@@ -39,3 +39,21 @@ class EC(BaseModel):
     coords: list[str] = []
     address: str | NULL = NULL
 
+
+
+### Sqlite models types. [ONLY UTILS]
+
+class FeedbackType(BaseModel):
+    message: str
+    author: str
+    review: str
+    date: str
+    """timestamp"""
+
+class OfferType(BaseModel):
+    message: str
+    author: str
+    date: str
+    """timestamp"""
+
+### Sqlite models types. [ONLY UTILS]

@@ -30,6 +30,8 @@ openpyxl = "^3.1.5"
 xlrd = "^2.0.1"
 cloudscraper = "^1.2.71"
 shapely = "^2.0.6"
+gitpython = "^3.1.43"
+aiosqlite = "^0.20.0"
 
 
 [build-system]

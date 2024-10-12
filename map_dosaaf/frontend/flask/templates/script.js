@@ -1,13 +1,11 @@
 var INITIAL_ZOOM = 3;
 var INITIAL_COORDS = [63.31122971681907, 92.47689091219665];
 
-var map = L.map('map', {
-    // preferCanvas: true,
-    // renderer: L.canvas()
-}).setView(INITIAL_COORDS, INITIAL_ZOOM);
+var map = L.map('map').setView(INITIAL_COORDS, INITIAL_ZOOM);
 
-window._data = {};
+
 var DISABLE_TILE_COLORS_RENDERING = false;
+
 
 class FederalDistrictLoader {
     constructor(map) {
@@ -51,6 +49,14 @@ class FederalDistrictLoader {
             let names = new Set(levels["federal_district"].map(item => item.properties.name));
             if (names.has(d.name)) {
                 continue;
+            }
+
+            if (d.name.toLowerCase().includes('дальневосточный федеральный округ')) {
+                d.geojson.coordinates = d.geojson.coordinates.filter(polygon => 
+                    !polygon.some(part => 
+                        part.some(coords => coords.length === 2 && (coords[0] < 0 || coords[1] < 0))
+                    )
+                );
             }
 
             let polygon = turf.feature(d.geojson);
@@ -123,6 +129,7 @@ var isPinned = false;
 
 class infoPanelWidget {
     constructor() {
+        this._boundsSource = map;
         this._infoControl = L.control.custom({ position: 'topright' });
         this._infoControl.onAdd = function (map) {
             this._div = L.DomUtil.create('div', 'info');
@@ -130,22 +137,32 @@ class infoPanelWidget {
             this._div.style.padding = '10px';
             this._div.style.borderRadius = '5px';
             this._div.style.width = '300px';
-            this._div.style.opacity = "30%"
+            this._div.style.opacity = "30%";
+            this._div.style.transition = 'right 0.3s, opacity 0.3s';
+            this._div.style.position = 'relative';
+            this._div.style.bottom = '30px';
+            this._div.style.top = '30px';
             this._div.style.right = '-70%';
-            this._div.style.transition = 'right 0.3s'; 
+            this._div.style.maxHeight = '80vh';
+            this._div.style.overflowY = 'auto';
+            this._div.style.pointerEvents = 'all'
 
             this.isPinned = false;
             this._div.addEventListener('mouseenter', () => {
                 if (!isPinned) { // Если не закреплено, выезжает
                     this._div.style.right = '0'; // Выезжает на 100%
-                    this._div.style.opacity = "100%"
+                    this._div.style.opacity = "1"; // Полная непрозрачность
                 }
+            });
+
+            this._div.addEventListener('wheel', (e) => {
+                e.stopPropagation(); // Предотвращаем всплытие события
             });
 
             this._div.addEventListener('mouseleave', () => {
                 if (!isPinned) { // Если не закреплено, скрывается
                     this._div.style.right = '-70%'; // Скрывается на 70%
-                    this._div.style.opacity = "30%"
+                    this._div.style.opacity = "0.3"; // Возвращается к прозрачности 30%
                 }
             });
     
@@ -154,12 +171,21 @@ class infoPanelWidget {
         };
     }
 
+    setBoundsSource(e) {
+        if (!(e instanceof L.Layer || e instanceof L.Map)) {
+            return
+        }
+        this._boundsSource = e;
+    }
+
     getEcTypesCount() {
         let ecTypesCount = {};
         for (let ec of window._data.markersData) {
             let coords = ec.coords ? ec.coords[0].split(",") : [];
             if (coords.length === 2) {
-                if (!map.getBounds().contains(L.latLng(coords))) {
+                var bounds = this._boundsSource.getBounds();
+
+                if (!bounds.contains(L.latLng(coords))) {
                     continue;
                 }
             }
@@ -182,32 +208,102 @@ class infoPanelWidget {
         return ecTypesCount;
     }
 
+    getOrgsCount() {
+        let count = {};
+        for (let org of window._data.orgs) {
+            let coords = org.coords ? org.coords[0].split(",") : [];
+
+            if (coords.length !== 2) {
+                continue;
+            }
+
+            var bounds = this._boundsSource.getBounds();
+
+            if (this._boundsSource instanceof L.Map) {
+                if (!bounds.contains(L.latLng(coords))) {
+                    continue;
+                }
+            } else {
+                if (!turf.booleanPointInPolygon(turf.point(coords), this._boundsSource.toGeoJSON())) { // Проверяем, содержится ли точка в полигоне
+                    continue;
+                }
+            }
+
+
+            let type = org.type_org;
+            if (count[type]) {
+                count[type] += 1;
+            } else {
+                count[type] = 1;
+            }
+        }
+
+        return count;
+    }
+
     getInfoPanel() {
         let infoControl = this._infoControl;
         var getEcTypesCount = this.getEcTypesCount.bind(this);
+        var getOrgsCount = this.getOrgsCount.bind(this);
+        var getBoundsSource = (function() {return this._boundsSource}).bind(this);
+
         infoControl.update = function (props) {
             let ecTypesCount = getEcTypesCount();
+            let orgsCount = getOrgsCount();
             let btn_text = 'Закрепить';
 
             if (isPinned) {
                 btn_text = "Открепить";
             }
+            let boundsSource = getBoundsSource();
+            let name;
+
+            if (boundsSource instanceof L.Map) {
+                name = "ДОСААФ";
+            } else {
+                name = boundsSource.feature.properties.name
+            }
 
             this._div.innerHTML = `
             <button class="pin-button">${btn_text}</button>
-            <h3>Главная информация</h3>
+            <h2>${name}.<br>Краткая информация</h2>
+                <h4>
+                Всего организаций: ${Object.values(orgsCount).reduce((sum, count) => sum + count, 0)} </br>
+                Всего ЕЦ: ${Object.values(ecTypesCount).reduce((sum, count) => sum + count, 0)}
+                </h4>
+            <h4>Единые центры</h4>
             <table style="width: 100%; border-collapse: collapse;">
                 <thead>
                     <tr>
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Тип единого центра</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Количество ЕЦ</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Тип единого центра</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Количество ЕЦ</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${Object.entries(ecTypesCount).map(([type, count]) => `
                         <tr>
-                            <td style="border: 1px solid #ddd; padding: 8px;">${type}</td>
-                            <td style="border: 1px solid #ddd; padding: 8px;">${count}</td>
+                        <td style="border: 1px solid #ddd; padding: 8px;">${type}</td>
+                        <td style="border: 1px solid #ddd; padding: 8px;">${count}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            <h4>Организации</h4>
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Тип организации</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Количество организаций</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Действие</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${Object.entries(orgsCount).map(([type, count]) => `
+                        <tr>
+                        <td style="border: 1px solid #ddd; padding: 8px;">${type === "null" ? "Неизвестно" : type}</td>
+                        <td style="border: 1px solid #ddd; padding: 8px;">${count  || "Неизвестно"}</td>
+                        <td style="border: 1px solid #ddd; padding: 8px;">
+                            <button onclick="showTypeOrg('${type}')">Показать на карте</button>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -231,79 +327,19 @@ class infoPanelWidget {
     }
 }
 
-function getInfoPanel() {
-    let infoControl = L.control.custom({ position: 'topright' });
-
-    infoControl.onAdd = function (map) {
-        this._div = L.DomUtil.create('div', 'info');
-        this._div.style.backgroundColor = 'white';
-        this._div.style.padding = '10px';
-        this._div.style.borderRadius = '5px';
-        this._div.style.width = '300px';
-        this._div.style.opacity = "30%"
-        this._div.style.right = '-70%';
-        this._div.style.transition = 'right 0.3s'; 
-
-        this._div.addEventListener('mouseenter', () => {
-            this._div.style.right = '0'; // Выезжает на 100%
-            this._div.style.opacity = "100%"
-        });
-
-        this._div.addEventListener('mouseleave', () => {
-            this._div.style.right = '-70%'; // Скрывается на 70%
-            this._div.style.opacity = "30%"
-        });
-
-        this.update();
-        return this._div;
-    };
-
-    let ecTypesCount = {};
-
-    for (let ec of window._data.markersData) {
-        let type;
-
-        if (ec.type_ec.toLowerCase().includes('зональный')) {
-            type = "Зональный центр";
-        } else if (ec.type_ec.toLowerCase().includes("региональный")) {
-            type = "Региональный центр"
-        } else {
-            throw new Error(ec.type_ec)
-        }
-
-        if (ecTypesCount[type]) {
-            ecTypesCount[type] += 1;
-        } else {
-            ecTypesCount[type] = 1;
-        }
-    }
-
-    infoControl.update = function (props) {
-        this._div.innerHTML = `<h3>Главная информация</h3>
-        <table style="width: 100%; border-collapse: collapse;">
-            <thead>
-                <tr>
-                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Тип единого центра</th>
-                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Количество ЕЦ</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${Object.entries(ecTypesCount).map(([type, count]) => `
-                    <tr>
-                        <td style="border: 1px solid #ddd; padding: 8px;">${type}</td>
-                        <td style="border: 1px solid #ddd; padding: 8px;">${count}</td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>
-        `
-    };
-
-    return infoControl;
-}
-
 
 var fd_loader = new FederalDistrictLoader(map);
+
+
+function showTypeOrg(type) {
+    window._markers.clearLayers();
+    for (let org of window._data.orgs) {
+        if (org.type_org !== type) {
+            continue;
+        }
+        loadOrganizationMarker(org);
+    }
+}
 
 
 function objectToString(obj) {
@@ -328,8 +364,8 @@ function getDataFromOrg(org) {
         federal_district: org.federal_district,
         region: org.region,
 
-        phones: org.phones,
-        emails: org.emails,
+        phones: org.contact_phones,
+        emails: org.contact_emails,
         websites: org.websites,
 
         ein: org.ein,
@@ -380,15 +416,15 @@ function loadOrganizations(organisations) {
 
         // load display data
         let dataObject = getDataFromOrg(organization);
-        // let dataString = objectToString(dataObject);
+        let dataString = objectToString(dataObject);
 
         // let marker = L.marker(coords);
-        // marker.bindPopup(dataString).openPopup();
+        // marker.bindPopup(dataString);
         // marker.bindTooltip(dataObject.name);
         // marker.addTo(window._markers);
         orgs.push(dataObject)
     }
-    //markers.addTo(map);
+    // markers.addTo(map);
     if (!window._data.orgs || window._data.orgs.length === 0) {
         window._data.orgs = orgs
     }
@@ -401,6 +437,81 @@ map.addControl(sidebar);
 sidebar.on("hidden", function() {
     sidebar.setContent("");
 })
+
+
+
+function loadOrganizationMarker(organisationData) {
+    let org = organisationData;
+
+    let marker = L.marker(org.coords[0].split(","))
+    .addTo(window._markers);
+    marker.on("click", function(e) {
+        if (sidebar.isVisible()) {
+            sidebar.hide()
+        }
+
+        let data = {
+            "Тип организации": org.type_org,
+            "ИНН организации": org.ein,
+            "КПП организации": org.kpp,
+            "Кол-во персонала": org.personals,
+            "Регион": org.region,
+            "Федеральный округ": org.federal_district,
+            "Адрес": org.address,
+            "Координаты": org.coords,
+        }
+        
+        let contactsData = {
+            "Телефон": (org.phones && org.phones.length > 0) ? org.phones.join(", ") : "Нету данных",
+            "Почта": (org.emails && org.emails.length > 0) ? org.emails.join(", ") : "Нету данных",
+            "Сайт": org.websites[0] || "Нету данных",
+            "Профиль на ListOrg": org.listorg ? 
+                `<a href="${org.listorg}" target="_blank" style="text-decoration: none;">
+                    <button style="padding: 10px 20px;">Открыть профиль</button>
+                </a>` : 
+                "Нету данных",
+        }
+
+        sidebar.setContent(
+            `
+            <div style="display: flex; flex-direction: column; height: 100%;">
+                <h3>${org.name}</h3>
+                <h3>Основная информация</h3>
+                <div style="width: 100%; border-collapse: collapse; flex-grow: 1;">
+                    ${Object.entries(data).map(([key, value]) => `
+                        <div class="data-row">
+                            <span class="data-key">${key}:</span>
+                            <span class="data-value">${value}</span>
+                        </div>
+                    `).join('')}
+                    
+                    <a href="https://yandex.ru/maps?mode=search&text=${org.coords}" target="_blank" style="text-decoration: none;">
+                        <button >Открыть на Яндекс.Картах</button>
+                    </a>
+                    <a href="https://2gis.ru/search/${org.coords}" target="_blank" style="text-decoration: none;">
+                        <button >Открыть в 2GIS</button>
+                    </a>
+                    <a href="https://pkk.rosreestr.ru/#/search/50.39212997282373,127.5592176766207/11/@541ls89ah?text=${org.coords}&type=1" target="_blank" style="text-decoration: none;">
+                        <button>Открыть кадастровую карту</button>
+                    </a>
+                </div>
+
+                <h3>Контактная информация</h3>
+                <div style="width: 100%; border-collapse: collapse; flex-grow: 1;">
+                    ${Object.entries(contactsData).map(([key, value]) => `
+                        <div class="data-row">
+                            <span class="data-key">${key}:</span>
+                            <span class="data-value">${value}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            `
+        )
+        sidebar.show();
+    })
+}
+
 
 async function loadEC() {
     let response = await fetch('/api/ec');
@@ -417,14 +528,23 @@ async function loadEC() {
             coords = ec.coords[0].split(',').map(num => parseFloat(num.trim()));
         }
 
+        let names = new Set(window._data.markersData.map(i => i.name))
         let dataObject = getDataFromEC(ec);
+
+        if (names.has(dataObject.name)) {
+            continue;
+        }
+
         let dataString = objectToString(dataObject);
 
         let type_ec = ec.type_ec;
+        let backgroundColor;
         if (type_ec.toLowerCase().includes("зональный")) {
             type_ec = 'ЗЦ';
+            backgroundColor = 'rgb(49, 161, 64)';
         } else if (type_ec.toLowerCase().includes("региональный")) {
             type_ec = 'РЦ';
+            backgroundColor = 'rgba(246, 53, 39, 0.78)';
         }
         else {
             throw new Error(`Unknown type_ec: ${ec.type_ec} ${ec}`);
@@ -434,19 +554,19 @@ async function loadEC() {
             icon: L.BeautifyIcon.icon({
                 isAlphaNumericIcon: true,
                 text: type_ec,
-                textColor: 'black',
+                textColor: 'white',
                 borderColor: 'black',
-                backgroundColor: 'white',
+                backgroundColor: backgroundColor,
                 customClasses: 'ec-marker',
                 iconSize: [30, 30],
-                borderWidth: 1
+                borderWidth: 1,
             }),
         })
 
         marker.bindTooltip(dataObject.name);
         marker.on("click", function(e) {
             if (sidebar.isVisible()) {
-                return;
+                sidebar.hide()
             }
 
             let data = {
@@ -492,74 +612,13 @@ async function loadEC() {
                 hideAllMarkers({remove: true})
                 clearHighlight()
 
-                let markers = [];
+                let coordinates = [];
                 for (let org of organisations) {
-                    let marker = L.marker(org.coords[0].split(",")).addTo(window._markers);
-                    marker.on("click", function(e) {
-                        if (sidebar.isVisible()) {
-                            sidebar.hide()
-                        }
-
-                        let data = {
-                            "Тип организации": org.type_org,
-                            "ИНН организации": org.ein,
-                            "КПП организации": org.kpp,
-                            "Кол-во персонала": org.personals,
-                            "Регион": org.region,
-                            "Федеральный округ": org.federal_district,
-                            "Адрес": org.address,
-                            "Координаты": org.coords,
-                        }
-                        
-                        let contactsData = {
-                            "Телефон": org.phones || "Нету данных",
-                            "Почта": org.emails || "Нету данных",
-                            "Сайт": org.websites[0] || "Нету данных",
-                            "Профиль на ListOrg": org.listorg ? 
-                                `<a href="${org.listorg}" target="_blank" style="text-decoration: none;">
-                                    <button style="padding: 10px 20px;">Открыть профиль</button>
-                                </a>` : 
-                                "Нету данных",
-                        }
-            
-                        sidebar.setContent(
-                            `
-                            <div style="display: flex; flex-direction: column; height: 100%;">
-                                <h3>${org.name}</h3>
-                                <div style="width: 100%; border-collapse: collapse; flex-grow: 1;">
-                                    ${Object.entries(data).map(([key, value]) => `
-                                        <div class="data-row">
-                                            <span class="data-key">${key}:</span>
-                                            <span class="data-value">${value}</span>
-                                        </div>
-                                    `).join('')}
-                                    
-                                    <a href="https://yandex.ru/maps?mode=search&text=${dataObject.coords}" target="_blank" style="text-decoration: none;">
-                                        <button style="padding: 10px 20px;">Открыть на Яндекс.Картах</button>
-                                    </a>
-                                    <a href="https://2gis.ru/search/${dataObject.coords}" target="_blank" style="text-decoration: none;">
-                                        <button style="padding: 10px 20px;">Открыть в 2GIS</button>
-                                    </a>
-                                </div>
-
-                                <h3>Контактная информация</h3>
-                                <div style="width: 100%; border-collapse: collapse; flex-grow: 1;">
-                                    ${Object.entries(contactsData).map(([key, value]) => `
-                                        <div class="data-row">
-                                            <span class="data-key">${key}:</span>
-                                            <span class="data-value">${value}</span>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
-                            `
-                        )
-                        sidebar.show();
-                    })
-                    markers.push(marker);
+                    loadOrganizationMarker(org)
+                    coordinates.push(org.coords[0].split(","));
                 }
 
-                let bounds = L.latLngBounds(markers.map(marker => marker.getLatLng()));
+                let bounds = L.latLngBounds(coordinates.map(coords => L.latLng(coords)));
                 map.fitBounds(bounds);
             }
         })
@@ -582,6 +641,9 @@ function closeFederalDistricts() {
 }
 
 
+var TARGET_POLYGON_NAME;
+
+
 function openRegions(federal_district_name) {
     let regions = [];
     for (let regionFeature of window._data["regions"].features) {
@@ -602,7 +664,7 @@ function openRegions(federal_district_name) {
     })
     .on("click", function(e) {
         map.fitBounds(e.layer.getBounds());
-        console.log(e.layer.feature.properties)
+        DISABLE_TILE_COLORS_RENDERING = !DISABLE_TILE_COLORS_RENDERING;
     })
     .on('mouseover', function(e) {
         if (DISABLE_TILE_COLORS_RENDERING) {
@@ -612,12 +674,15 @@ function openRegions(federal_district_name) {
         if (properties.closed === true) {
             return;
         }
-        L.popup()
-        .setContent(properties.name)
-        .setLatLng(e.latlng)
-        .openOn(map);
+        if (highlight !== e.layer) {
+            L.popup()
+            .setContent(properties.name)
+            .setLatLng(e.latlng)
+            .openOn(map);
+        }
         clearHighlight();
         highlight = e.layer;
+        infoPanel.setBoundsSource(highlight);
         var style = {
             fillColor: '#ec0f0f',
             fillOpacity: 0.2,
@@ -656,12 +721,19 @@ async function loadFD() {
         if (properties.closed === true) {
             return;
         }
-        L.popup()
-        .setContent(properties.name)
-        .setLatLng(e.latlng)
-        .openOn(map);
+        if (highlight !== e.layer) {
+            let latlng = e.layer.getCenter();
+            if (properties.name.toLowerCase().includes("дальневосточный федеральный округ")) {
+                latlng = e.latlng;
+            }
+            L.popup()
+            .setContent(properties.name)
+            .setLatLng(latlng)
+            .openOn(map);
+        }
         clearHighlight();
         highlight = e.layer;
+        infoPanel.setBoundsSource(highlight);
         var style = {
             fillColor: '#ec0f0f',
             fillOpacity: 0.2,
@@ -680,10 +752,6 @@ async function loadFD() {
         closeFederalDistricts()
     })
     .addTo(map);
-
-    map.on("click", function(e) {
-        clearHighlight()
-    })
 }
 
 
@@ -744,17 +812,6 @@ function ecPopup(title, content, relatedOrgsEins = null) {
 }
 
 
-async function loadRelatedOrgsPopup(releatedOrgsEins) {
-    const params = new URLSearchParams();
-    if (releatedOrgsEins) {
-        releatedOrgsEins.forEach(ein => params.append('ein', ein));
-    }
-
-    let response = await fetch(`/api/organizations?${params.toString()}`);
-    let organizations = await response.json();
-    await loadOrganizations(organizations);
-}
-
 
 function hideAllMarkers(curr = null, remove = false) {
     window._markers.clearLayers()
@@ -774,8 +831,9 @@ async function loadTileTogler() {
 
     new L.basemapsSwitcher([
         {
-            layer: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '<a href="https://osm.org/copyright">OpenStreetMap contributors</a>'
+            layer: L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{
+                maxZoom: 20,
+                subdomains:['mt0','mt1','mt2','mt3']
             }).addTo(map),
             icon: "{{ url_for('static', filename='map.png')}}",
             name: 'Схема'
@@ -841,12 +899,19 @@ async function resetMapStyle() {
         if (properties.closed === true) {
             return;
         }
-        L.popup()
-        .setContent(properties.name)
-        .setLatLng(e.latlng)
-        .openOn(map);
+        if (highlight !== e.layer) {
+            let latlng = e.layer.getCenter();
+            if (properties.name.toLowerCase().includes("дальневосточный федеральный округ")) {
+                latlng = e.latlng;
+            }
+            L.popup()
+            .setContent(properties.name)
+            .setLatLng(latlng)
+            .openOn(map);
+        }
         clearHighlight();
         highlight = e.layer;
+        infoPanel.setBoundsSource(highlight);
         var style = {
             fillColor: '#ec0f0f',
             fillOpacity: 0.5,
@@ -867,8 +932,49 @@ async function resetMapStyle() {
     .addTo(map);
 
     map.setView(INITIAL_COORDS, INITIAL_ZOOM);
+    window._data.markersData = [];
+    window._markers.clearLayers()
     await loadMarkers();
 }
+
+
+function getTogglerOrgsButton() {
+    let c = L.control.custom(
+        {position: "topleft"}
+    );
+
+    c.onAdd = function (map) {
+        this._isEcVisible = true;
+        this._div = L.DomUtil.create('div', 'toggler');
+        this._div.innerHTML = '<button id="toggle-button">Показать организации</button>';
+
+        this._div.querySelector('#toggle-button').onclick = async () => {
+            
+            if (this._isEcVisible) {
+                window._markers.clearLayers()
+                for (let org of window._data.orgs) {
+                    loadOrganizationMarker(org);
+                }
+                this._div.querySelector('#toggle-button').textContent = 'Показать единые центры';
+            } else {
+                window._data.markersData = [];
+                window._markers.clearLayers()
+                await loadEC(); 
+                this._div.querySelector('#toggle-button').textContent = 'Показать организации';
+            }
+            this._isEcVisible = !this._isEcVisible;
+        };
+
+        return this._div;
+    };
+
+    return c
+}
+
+
+var infoPanel = new infoPanelWidget();
+infoPanel.setBoundsSource(map);
+var myControl = infoPanel.getInfoPanel();
 
 
 function setupOtherControls() {
@@ -876,14 +982,23 @@ function setupOtherControls() {
         await resetMapStyle()
     }).addTo(map);
 
-    // let myControl = getInfoPanel();
-    let infoPanel = new infoPanelWidget();
-    let myControl = infoPanel.getInfoPanel();
     myControl.addTo(map)
-
-    map.on('move', function(e) {
+    map.on('move mousemove', function(e) {
         myControl.update()
     })
+
+    let toggler = getTogglerOrgsButton();
+    toggler.addTo(map);
+
+    map.on("click", function(e) {
+        if (DISABLE_TILE_COLORS_RENDERING) {
+            return;
+        }
+        clearHighlight()
+        infoPanel.setBoundsSource(map);
+        myControl.update();
+    })
+
 }
 
 

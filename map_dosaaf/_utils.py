@@ -1674,29 +1674,30 @@ async def format_data():
         obj["geolevels"] = geolevels
         rows.append(obj)
         
-    # df = pd.read_json("list-org-base.json")
+    df = pd.read_json("list-org-base.json")
     
-    # tasks = []
-    # for i, row in df.iterrows():
-    #     if isinstance(row["geolevels"], dict) and row["geolevels"].get("4"):
-    #         continue
+    tasks = []
+    for i, row in df.iterrows():
+        if isinstance(row["geolevels"], dict) and row["geolevels"].get("4"):
+            continue
         
-    #     if isinstance(row["coords"], list) and row["coords"]:
-    #         continue
+        if isinstance(row["coords"], list) and row["coords"]:
+            continue
         
-    #     tasks.append(geocode(row))
+        tasks.append(geocode(row))
         
-    # res = await asyncio.gather(*tasks, return_exceptions=False)
+    res = await asyncio.gather(*tasks, return_exceptions=False)
     
-    # src = df.fillna("").to_dict('records')
-    # src2 = src.copy()
+    src = df.fillna("").to_dict('records')
+    src2 = src.copy()
     
-    # for obj in rows:
-    #     srcobj = [o for o in src2 if int(o["ein"]) == int(obj["ein"])][0]
-    #     i = src2.index(srcobj)
-    #     src2[i].update(obj)
+    for obj in rows:
+        srcobj = [o for o in src2 if int(o["ein"]) == int(obj["ein"])][0]
+        i = src2.index(srcobj)
+        src2[i].update(obj)
         
-    # json.dump(src2, open("list-org-base.json", "w"), indent=2, ensure_ascii=False)
+    json.dump(src2, open("list-org-base.json", "w"), indent=2, ensure_ascii=False)
+    return
     
     orgs_objs = json.load(open("list-org-base.json"))
     ecs = json.load(open("data/Единые-центры.json"))

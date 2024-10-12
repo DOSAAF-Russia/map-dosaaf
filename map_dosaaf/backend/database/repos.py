@@ -4,8 +4,8 @@ from sqlalchemy import select, insert
 from sqlalchemy.engine.cursor import CursorResult
 from pydantic import BaseModel
 
-from map_dosaaf.backend.database.models import EC, Organisation
-from map_dosaaf.common.app_types import NULL, Organisation as OrganisationType, EC as ECType
+from map_dosaaf.backend.database.models import EC, Feedback, Offer, Organisation
+from map_dosaaf.common.app_types import NULL, FeedbackType, OfferType, Organisation as OrganisationType, EC as ECType
 
 
 def convert_model(model: BaseModel) -> dict:
@@ -85,6 +85,44 @@ class ECRepository(SQLAlchemyRepository):
             return [ECType(**r._asdict()) for r in result]
 
     async def add(self, obj: ECType):
+        values = convert_model(obj)
+        stmt = insert(self._model).values(**values)
+        await self._execute_stmt(stmt)
+        await self._session.commit()
+
+
+
+class FeedbackRepository(SQLAlchemyRepository):
+    _model = Feedback
+
+    async def get_all(self) -> list[FeedbackType | None]:
+        stmt = select(self._model)
+        res = await self._execute_stmt(stmt)
+        result = res.fetchall()
+
+        if result:
+            return [FeedbackType(**r._asdict()) for r in result]
+        return []
+        
+    async def add(self, obj: FeedbackType):
+        values = convert_model(obj)
+        stmt = insert(self._model).values(**values)
+        await self._execute_stmt(stmt)
+        await self._session.commit()
+
+class OfferRepository(SQLAlchemyRepository):
+    _model = Offer
+    
+    async def get_all(self) -> list[OfferType | None]:
+        stmt = select(self._model)
+        res = await self._execute_stmt(stmt)
+        result = res.fetchall()
+
+        if result:
+            return [OfferType(**r._asdict()) for r in result]
+        return []
+
+    async def add(self, obj: OfferType):
         values = convert_model(obj)
         stmt = insert(self._model).values(**values)
         await self._execute_stmt(stmt)

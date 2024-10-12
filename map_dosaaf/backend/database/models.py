@@ -58,4 +58,27 @@ class EC(Base):
     address: Mapped[list[str]] = mapped_column(
         ARRAY(String), nullable=False, default=[]
     )
-    
+
+
+### Sqlite models. [ONLY UTILS]
+
+class SqliteBase(DeclarativeBase):
+    pass
+
+class Feedback(SqliteBase):
+    __tablename__ = "feedbacks"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    message: Mapped[str] = mapped_column(String, nullable=False)
+    author: Mapped[str] = mapped_column(String, nullable=False)
+    review: Mapped[str] = mapped_column(Integer, nullable=False)
+    date: Mapped[str] = mapped_column(String, nullable=False)
+
+class Offer(SqliteBase):
+    __tablename__ = "offers"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    message: Mapped[str] = mapped_column(String, nullable=False)
+    author: Mapped[str] = mapped_column(String, nullable=False)
+    date: Mapped[str] = mapped_column(String, nullable=False)
+
+### Sqlite models. [ONLY UTILS]
+

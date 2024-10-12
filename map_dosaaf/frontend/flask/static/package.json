@@ -10,7 +10,13 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "leaflet-search": "^4.0.0",
     "leaflet-switch-basemap": "^1.0.6",
     "leaflet.glify": "^3.3.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.11.1",
+    "eslint": "^9.11.1",
+    "globals": "^15.10.0"
   }
 }
