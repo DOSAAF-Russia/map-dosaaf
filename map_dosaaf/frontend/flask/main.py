@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from map_dosaaf.backend.database import prepare_db
 from map_dosaaf.backend.database.models import SqliteBase
-from map_dosaaf.common.app_types import FeedbackType, OfferType, Organisation
+from map_dosaaf.common.app_types import EC, FeedbackType, OfferType, Organisation
 from map_dosaaf.backend.database.repos import ECRepository, FeedbackRepository, OfferRepository, OrganisationRepository
 from map_dosaaf.backend.utils import get_sqlalchemy_async_sessionmaker
 
@@ -30,12 +30,36 @@ class Storage:
         self._offer_repo = OfferRepository(self._sqlite_sessionmaker())
 
     async def load_points(self):
+        from map_dosaaf.common.app_types import NULL
         async with self._db_sessionmaker() as session:
-            repo_orgs = OrganisationRepository(session)
+            # repo_orgs = OrganisationRepository(session)
             repo_ec = ECRepository(session)
             
-            self._points = await repo_orgs.get_all()
+            # self._points = await repo_orgs.get_all()
             self._ec = await repo_ec.get_all()
+        with open("data/Юридические-Организации-list_org.json") as f:
+            content = f.read()
+            points = []
+            for i in orjson.loads(content):
+                if isinstance(i["coords"], str):
+                    if len(i["coords"]) < 10:
+                        continue
+                    i["coords"] = [i["coords"]]
+                        
+                if isinstance(i["address"], str):
+                    i["address"] = [i["address"]]
+                i["ein"] = str(i["ein"])
+                i["contact_emails"] = i["emails"]
+                i["contact_phones"] = i["phones"]
+                i["websites"] = i["websites"]
+                
+                obj = Organisation(**i)
+                
+                for field in obj.model_fields:
+                    if getattr(obj, field) == NULL:
+                        setattr(obj, field, None)
+                points.append(obj)
+        self._points = points
         
         with open("data/Федеральные_округа-Регионы.json") as f:
             fd = json.load(f)
