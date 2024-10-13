@@ -14,8 +14,8 @@ import pandas as pd
 import ua_generator
 from openpyxl import load_workbook
 from openpyxl.cell import MergedCell
-from playwright.async_api import async_playwright
-from playwright_stealth.stealth import stealth_async
+# from playwright.async_api import async_playwright
+# from playwright_stealth.stealth import stealth_async
 from yarl import URL
 
 from map_dosaaf.backend.database import prepare_db
@@ -870,7 +870,6 @@ class GeoCoder:
             return None
 
 
-from playwright.async_api import async_playwright
 
 
 class GeocoderXYZ:
@@ -1912,29 +1911,195 @@ async def format_data():
 
 
 
+class SparkInterfaxAPI:
+    def __init__(self) -> None:
+        self._client = httpx.AsyncClient()
+    
+    async def _get_requestverificationtoken(self, client: httpx.AsyncClient):
+        headers = {
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'accept-language': 'ru-RU,ru;q=0.9',
+            'cache-control': 'no-cache',
+            'pragma': 'no-cache',
+            'priority': 'u=0, i',
+            'sec-ch-ua': '"Google Chrome";v="129", "Not=A?Brand";v="8", "Chromium";v="129"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Linux"',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'none',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
+            'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+        }
+        url =  'https://spark-interfax.ru/'
+        response = await client.get(url, headers=headers)
+        soup = bs4.BeautifulSoup(response.text, "html.parser")
+        requestverificationtoken = soup.find("span", class_="js-anti-forgery").text
+        return requestverificationtoken
+        
+    @property
+    def _base_hdrs(self):
+        hdrs = {
+            'accept': 'text/plain, */*; q=0.01',
+            'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7,my;q=0.6',
+            'cache-control': 'no-cache',
+            'cookie': 'sv=1; .prmo.reqaf=CfDJ8JUcwpNfFFlNnyMmPO6VTfbOh9-BP2hQ0Evrkg2Xh9FToIxUEeIOO0FKG3h6dndHWsjI2cBo-HxDQbroIJTKfrS0tKqHTjrsxg5EsBdFWcKzLpIHHQHZSPLp8P3Ks5P22DdrqL9hsdoA1ow5rY0U7Mo; testcookie; ss-pid=nxYDVGFSBWUesheNYYYy; ss-id=lDLCh4pOJrueXGolQzY8; _ga=GA1.2.985799243.1728814011; _gid=GA1.2.67838153.1728814011; _gat=1; _ym_uid=1728814011792098743; _ym_d=1728814011; _ym_isad=2; _ym_visorc=b; _ga_V1NGDLX2GM=GS1.2.1728814011.1.0.1728814011.0.0.0',
+            'pragma': 'no-cache',
+            'priority': 'u=1, i',
+            'referer': 'https://spark-interfax.ru/',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'x-requested-with': 'XMLHttpRequest',
+        }
+        
+        for k, v in ua_generator.generate().headers.get().items():
+            hdrs[k] = v
+        
+        return hdrs
+    
+    async def get_org_link(self, query: str, proxy: str = None, timeout: int = 5) -> str:
+        params = {
+            'query': query,
+        }
+        
+        headers = {
+            'accept': 'text/plain, */*; q=0.01',
+            'accept-language': 'ru-RU,ru;q=0.9',
+            'cache-control': 'no-cache',
+            'cookie': 'sv=1; .prmo.reqaf=CfDJ8JUcwpNfFFlNnyMmPO6VTfbOh9-BP2hQ0Evrkg2Xh9FToIxUEeIOO0FKG3h6dndHWsjI2cBo-HxDQbroIJTKfrS0tKqHTjrsxg5EsBdFWcKzLpIHHQHZSPLp8P3Ks5P22DdrqL9hsdoA1ow5rY0U7Mo; testcookie; ss-pid=nxYDVGFSBWUesheNYYYy; ss-id=lDLCh4pOJrueXGolQzY8; _ga=GA1.2.985799243.1728814011; _gid=GA1.2.67838153.1728814011; _gat=1; _ym_uid=1728814011792098743; _ym_d=1728814011; _ym_isad=2; _ym_visorc=b; _ga_V1NGDLX2GM=GS1.2.1728814011.1.0.1728814011.0.0.0',
+            'pragma': 'no-cache',
+            'priority': 'u=1, i',
+            'referer': 'https://spark-interfax.ru/',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'x-requested-with': 'XMLHttpRequest',
+        }
+        
+        for k, v in ua_generator.generate().headers.get().items():
+            headers[k] = v
+
+        base_url = 'https://spark-interfax.ru/search/suggestions'
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(timeout)) as client:
+            # headers["requestverificationtoken"] = await self._get_requestverificationtoken(client)
+            headers["requestverificationtoken"] = "CfDJ8JUcwpNfFFlNnyMmPO6VTfYxAhHGnWHFMQU237dSzTyL0mR2MUJgf8nUwCdMWR33cwRBClrMBnhaVytfe-5ahnseXmY17pYtvIn8Kv6AtPmTKjLOUAU2JG8dzTnuni86qNhQuKiM_k3tk6hXUeKA0XY"
+            response = await client.get(base_url, params=params, headers=headers, proxy=proxy)
+            data = await response.json(content_type=response.content_type)
+        return "https://spark-interfax.ru" + data["suggestions"][0]["CompanyRef"]
+    
+    async def get_org_geo_info(self, link: str, proxy: str = None, timeout: int = 5) -> dict:
+        headers = {
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'accept-language': 'ru-RU,ru;q=0.9',
+            'cache-control': 'no-cache',
+            'cookie': 'testcookie; sv=1; .prmo.reqaf=CfDJ8JUcwpNfFFlNnyMmPO6VTfbOh9-BP2hQ0Evrkg2Xh9FToIxUEeIOO0FKG3h6dndHWsjI2cBo-HxDQbroIJTKfrS0tKqHTjrsxg5EsBdFWcKzLpIHHQHZSPLp8P3Ks5P22DdrqL9hsdoA1ow5rY0U7Mo; testcookie; ss-pid=nxYDVGFSBWUesheNYYYy; ss-id=lDLCh4pOJrueXGolQzY8; _ga=GA1.2.985799243.1728814011; _gid=GA1.2.67838153.1728814011; _ym_uid=1728814011792098743; _ym_d=1728814011; _ym_isad=2; _ym_visorc=b; _ga_V1NGDLX2GM=GS1.2.1728814011.1.1.1728815417.0.0.0',
+            'pragma': 'no-cache',
+            'priority': 'u=0, i',
+            'referer': 'https://spark-interfax.ru/',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
+        }
+
+        
+        for k, v in ua_generator.generate().headers.get().items():
+            headers[k] = v
+            
+            
+        data = {}
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(timeout)) as client:
+            response = await client.get(link, headers=headers, proxy=proxy)
+            html = await response.text()
+            soup = bs4.BeautifulSoup(html, "lxml")
+            
+            div = soup.find("div", class_="js-company-map")
+            data["coords"] = f"{div['data-place-latitude']}, {div['data-place-longitude']}"
+            data["coords"] = " ".join([w.strip() for w in data["coords"].split()])
+            data["address"] = div["data-place-address"]
+            ...
+        return data
+
+
+
+
+async def get_geoinfo_from_orgein(
+    ein: str | int, proxy: str = None
+) -> dict:
+    # ein = "1433032967"
+    # proxy = 'http://z0zchejqruFv:RNW78Fm5@pool.proxy.market:10005'
+    
+    api = SparkInterfaxAPI()
+    link = await api.get_org_link(ein, proxy=proxy)
+    data = await api.get_org_geo_info(link, proxy=proxy)
+    # {
+    #     'coords': '62.546582, 113.967831', 
+    #     'address': 'Саха /Якутия/ Респ, м.р-н Мирнинский, г.п. город Мирный, г Мирный, ш 50 лет Октября, д. 12/1, кв. 17'
+    # }
+    data["link"] = link
+    return data
+
+
+
 import pickle
 async def main():
-    await gather_polygons_dosaaf()
-    ...
-    # await parse_regional_departments()
-    # _ = pickle.load(open("orgs-ecs.pkl", "rb"))
     
-    # await prepare_db()
-    # orgs = _["orgs"]
-    # ecs = _["ecs"]
+    # await gather_polygons_dosaaf()
     
-    # async with get_sqlalchemy_async_sessionmaker()() as session:
-    #     repo_orgs = OrganisationRepository(session)
-    #     repo_ecs = ECRepository(session)
+    async def geocode(row):
+        nonlocal geocoded
         
-    #     for org in orgs:
-    #         ...
-    #         await repo_orgs.add(org)
+        proxy = f"http://z0zchejqruFv:RNW78Fm5@pool.proxy.market:{random.randint(10000, 10999)}"
+        data = await get_geoinfo_from_orgein(row["ein"], proxy=proxy)
+        row["coords"] = data["coords"]
+        row["address"] = data["address"]
+        row["spark-interfax_link"] = data["link"]
+        geocoded.append(row.to_dict())
+    
+    while True:
+        df = pd.read_json("list-org-base.json")
+        tasks = []
+        geocoded = []
         
-    #     for ec in ecs:
-    #         ...
-    #         await repo_ecs.add(ec)
+        exists_eins = [str(r["ein"]) for _, r in df.iterrows() if not pd.isnull(r.get("spark-interfax_link"))]
+        for i, row in df.iterrows():
+            if str(row["ein"]) in exists_eins:
+                continue
+            
+            if len(tasks) >= 20:
+            # if len(tasks) > 1:
+                res = await asyncio.gather(*tasks, return_exceptions=True)
+                tasks.clear()
+                await asyncio.sleep(1)
+            
+            tasks.append(geocode(row))
+            
+        if tasks:
+            res = await asyncio.gather(*tasks, return_exceptions=True)
+            tasks.clear()
+            
+        # new_df = pd.DataFrame(geocoded)
         
+        existing_data = orjson.loads(open("list-org-base.json").read())
+        # existing_data.extend(geocoded)
+        
+        tmp = []
+        for r in existing_data:
+            ein = str(r["ein"])
+            eins_geocoded = [str(t["ein"]) for t in geocoded]
+            if ein in eins_geocoded:
+                for g in geocoded:
+                    if str(g["ein"]) == ein:
+                        r = g
+                        break
+            if r not in tmp:
+                tmp.append(r)
+        
+        open("list-org-base.json", "w").write(orjson.dumps(tmp).decode("utf-8"))
+            
     return
     return await format_data()
     # await prepare_db()
