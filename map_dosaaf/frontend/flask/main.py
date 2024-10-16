@@ -52,6 +52,12 @@ class Storage:
                 i["contact_emails"] = i["emails"]
                 i["contact_phones"] = i["phones"]
                 i["websites"] = i["websites"]
+                i["state"] = i.pop("status")
+                if i.get("geolevels"):
+                    i["federal_district"] = i.get("geolevels", {}).get("2")
+                    i["region"] = i.get("geolevels", {}).get("3")
+                    
+                i["link_listorg"] = i.pop("link")
                 
                 obj = Organisation(**i)
                 
