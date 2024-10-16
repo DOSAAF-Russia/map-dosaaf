@@ -6,6 +6,7 @@ __pycache__/
 # Custom
 node_modules/
 *.pkl
+.~lock*
 
 # C extensions
 *.so
