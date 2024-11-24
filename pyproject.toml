@@ -1,0 +1,37 @@
+[tool.poetry]
+name = "map-dosaaf"
+version = "0.1.0"
+description = ""
+authors = ["dev.tolmachev <dev.tolmachev@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+flask = {extras = ["async"], version = "^3.0.3"}
+flask-cors = "^5.0.0"
+uvicorn = "^0.30.6"
+sqlalchemy = "^2.0.34"
+asyncpg = "^0.29.0"
+envyaml = "^1.10.211231"
+pydantic = "^2.9.1"
+pandas = "^2.2.2"
+geopy = "^2.4.1"
+httpx = "^0.27.2"
+aiohttp = "^3.10.5"
+bs4 = "^0.0.2"
+lxml = "^5.3.0"
+ua-generator = "^1.0.5"
+loguru = "^0.7.2"
+orjson = "^3.10.7"
+pyyaml = "^6.0.2"
+openpyxl = "^3.1.5"
+xlrd = "^2.0.1"
+cloudscraper = "^1.2.71"
+shapely = "^2.0.6"
+gitpython = "^3.1.43"
+aiosqlite = "^0.20.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
