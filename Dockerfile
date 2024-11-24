@@ -13,5 +13,7 @@ RUN poetry install --no-root --no-ansi --no-interaction
 # Copy source code
 COPY . /app
 
+RUN git config --global --add safe.directory /app
+
 # Run the app
 CMD ["python", "map_dosaaf/frontend/flask/main.py"]

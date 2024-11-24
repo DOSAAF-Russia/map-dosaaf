@@ -76,7 +76,7 @@ class ECRepository(SQLAlchemyRepository):
         if result:
             return ECType(**result._asdict())
 
-    async def get_all(self) -> Optional[ECType]:
+    async def get_all(self) -> list[Optional[ECType]]:
         stmt = select(self._model)
         res = await self._execute_stmt(stmt)
         result = res.fetchall()

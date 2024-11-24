@@ -4,8 +4,16 @@ import orjson
 
 
 def load_dataset(file_path: str):
+    """Construct a list of dict objects with `едиными центрами` from excel table
+
+    Args:
+        file_path (str): path to excel
+
+    Returns:
+        list[dict]: list with data about единых центрах
+    """
     workbook = openpyxl.load_workbook(file_path)
-    # she   et = workbook.active
+    # sheet = workbook.active
     data = []
     
     emc = None
