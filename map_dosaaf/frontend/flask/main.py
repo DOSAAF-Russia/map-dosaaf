@@ -21,6 +21,9 @@ CORS(app)
 
 
 class Storage:
+    """
+    This implements simple cache storage, for site, that interact with database.
+    """
     def __init__(self) -> None:
         self._points: list[Organisation] = []
         self._db_sessionmaker = get_sqlalchemy_async_sessionmaker()
@@ -31,12 +34,20 @@ class Storage:
 
     async def load_points(self):
         from map_dosaaf.common.app_types import NULL
-        async with self._db_sessionmaker() as session:
+        # async with self._db_sessionmaker() as session:
             # repo_orgs = OrganisationRepository(session)
-            repo_ec = ECRepository(session)
+            # repo_ec = ECRepository(session)
             
             # self._points = await repo_orgs.get_all()
-            self._ec = await repo_ec.get_all()
+            # self._ec = await repo_ec.get_all()
+        
+        with open("data/Единые_центры_postgresql.json") as f:
+            content = f.read()
+            ecs = []
+            for ec in orjson.loads(content):
+                ecs.append(EC(**ec))
+            self._ec = ecs
+        
         with open("data/Юридические-Организации-list_org.json") as f:
             content = f.read()
             points = []

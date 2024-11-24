@@ -2,7 +2,7 @@ services:
   app:
     build: .
     ports:
-      - 80:5050
+      - 5050:5050
     restart: unless-stopped
     volumes:
       - .:/app
